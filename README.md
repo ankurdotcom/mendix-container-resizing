@@ -66,4 +66,58 @@ To ensure the page is "bulletproof" before the Production window, QA must perfor
 
 ---
 
+## 6. Post-Resize Smoke Testing (Verification)
+Once the Mendix Support team completes the resize and the logs show `Mendix Runtime is started`, you must verify the application's health before allowing public traffic back in.
+
+### **How to Access the App While Maintenance Mode is ON**
+In the Mendix Public Cloud, the Maintenance Mode toggle is an "all-or-nothing" switch for the primary URL. To perform a smoke test, you have two primary options:
+
+#### **Option A: The Environment-Specific URL (Recommended)**
+Mendix often provides a secondary, technical URL for environments that bypasses certain custom domain configurations.
+* **Check the Portal:** Go to **Environments > [Env] > Details**. 
+* **The "Default" URL:** Check if the default Mendix cloud URL (e.g., `myapp-test.mendixcloud.com`) is accessible even if your custom vanity domain (`apps.company.com`) is showing the maintenance page. 
+* *Note:* In some cloud configurations, the toggle applies to all paths. If this is blocked, move to Option B.
+
+#### **Option B: Temporary IP/Header Whitelisting (If Supported)**
+If your organization uses a dedicated Mendix Cloud Resource or a WAF (Web Application Firewall) in front of Mendix:
+* Your Network/DevOps team can add a **Header Bypass**. The Load Balancer can be configured to say: *"Show Maintenance Page to everyone UNLESS the request contains the header `X-Smoke-Test: True`."*
+* Using a browser extension like **ModHeader**, QA can then inject that header to "see through" the maintenance page.
+
+#### **Option C: The "Internal" API Check**
+If you cannot access the UI, you can verify the runtime health via the **Mendix Runtime API** or health check endpoints:
+* Access `https://<your-app-url>/rest/health` (if you have implemented a health check microflow).
+* If the Load Balancer is strictly blocking all paths, you may need to briefly toggle Maintenance Mode **OFF** during a low-traffic window (seconds), hit the URL to confirm the login screen appears, and toggle it back **ON**.
+
+---
+
+## 7. Validating the "Strict" Load Balancer Setup
+To confirm your application is strictly behind the Load Balancer and that the Maintenance Page is behaving correctly:
+
+### **The "Direct Hit" Test**
+1.  **Identify the IP:** Use a `ping` or `nslookup` command on your application URL to find the current IP address assigned to the Load Balancer.
+2.  **Trace the Route:** Use `tracert` (Windows) or `traceroute` (Mac/Linux).
+    * **Verification:** You should see the traffic hitting a Mendix-owned gateway (e.g., `edge.mendix.com` or an AWS ELB endpoint) before it reaches the app.
+3.  **The Header Verification:**
+    * Open Browser Developer Tools (F12) > **Network Tab**.
+    * Click on the main URL request.
+    * Look at the **Response Headers**.
+    * You should see `Server: Cloudflare`, `Server: AmazonS3`, or `X-Served-By: Mendix-LB`. 
+    * If Maintenance Mode is **ON**, the `Content-Type` will usually be `text/html`, and the `Server` header will confirm it is being served by the edge, not the Mendix Runtime.
+
+---
+
+## 8. Updated Smoke Test Workflow for QA
+1.  **Support Notification:** Support confirms resize is done.
+2.  **Runtime Check:** DevOps confirms logs show `Mendix Runtime is started`.
+3.  **Bypass Access:** QA accesses the app via the technical URL or Header Bypass.
+4.  **Smoke Test:** * Can you reach the Login Page?
+    * Does a simple "Read" operation from the Database work? (Confirms DB connection is restored).
+    * Is the File Storage accessible?
+5.  **Final Go-Live:** Once QA gives the "Green Light," DevOps toggles **Maintenance Mode to OFF**.
+
+---
+
+### **Summary for Product Owner**
+> **"We are essentially creating a 'back door' for the QA team to test the new, larger engine while the 'Closed' sign is still hanging on the front door. We only open the front door once we know the engine is running smoothly."**
+
 > **Architect's Final Note:** Ensure all Scheduled Events or long-running background processes are monitored or paused prior to the resize, as the container destruction will terminate any active Java threads immediately.
